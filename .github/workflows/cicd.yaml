@@ -9,7 +9,7 @@ on:
 jobs:
   # job 1: run only `test_spark_job.py` for dev branch
   run-tests:
-    if: github.ref == 'ref/heads/dev'
+    if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
 
     steps:
@@ -25,7 +25,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: run pytest for test_spark_job.py
-        run - pytest tests/test_spark_job.py
+        run: pytest tests/test_spark_job.py
         
   # job 2: upload airflow dag & pyspark job to gcs (only for main branch)
   deploy-to-prod:
@@ -39,7 +39,8 @@ jobs:
       - name: authenticate to gcp
         uses: google-github-actions/auth@v1
         with: 
-          credentials_json: ${{secrets.GCP_SA_KEY}}
+          workload_identity_provider: 'projects/870802335159/locations/global/workloadIdentityPools/creditcard-github-pool/providers/github-provider'
+          service_account: 'github-actions-deployer-sa@project-5b09c9f0-c89b-4689-9bb.iam.gserviceaccount.com'
 
       - name: setup google cloud sdk
         uses: google-github-actions/setup-gcloud@v1
@@ -47,7 +48,11 @@ jobs:
           project_id: ${{secrets.GCP_PROJECT_ID}}
 
       - name: upload spark job to gcs
-        run: 
+        run: gcloud storage cp spark_job.py gs://credit-card-data-analysis-gds/spark_job/
 
       - name: upload airflow dag to composer
-        run:
+        run: |
+          gcloud composer environments storage dags import \
+            --environment credit-card-airflow \
+            --location us-central1 \
+            --source airflow_dag.py
