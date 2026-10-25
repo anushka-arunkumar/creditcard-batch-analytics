@@ -1,0 +1,58 @@
+name: credit card transactions cicd
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+
+jobs:
+  # job 1: run only `test_spark_job.py` for dev branch
+  run-tests:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v3
+
+      - name: set up python
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.11"
+
+      - name: install dependencies
+        run: pip install -r requirements.txt
+
+      - name: run pytest for test_spark_job.py
+        run: pytest tests/test_spark_job.py
+        
+  # job 2: upload airflow dag & pyspark job to gcs (only for main branch)
+  deploy-to-prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v3
+      
+      - name: authenticate to gcp
+        uses: google-github-actions/auth@v1
+        with: 
+          workload_identity_provider: 'projects/870802335159/locations/global/workloadIdentityPools/creditcard-github-pool/providers/github-provider'
+          service_account: 'github-actions-deployer-sa@project-5b09c9f0-c89b-4689-9bb.iam.gserviceaccount.com'
+
+      - name: setup google cloud sdk
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{secrets.GCP_PROJECT_ID}}
+
+      - name: upload spark job to gcs
+        run: gcloud storage cp spark_job.py gs://credit-card-data-analysis-gds/spark_job/
+
+      - name: upload airflow dag to composer
+        run: |
+          gcloud composer environments storage dags import \
+            --environment credit-card-airflow \
+            --location us-central1 \
+            --source airflow_dag.py
