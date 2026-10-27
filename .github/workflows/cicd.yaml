@@ -52,7 +52,7 @@ jobs:
           project_id: 'project-5b09c9f0-c89b-4689-9bb'
 
       - name: upload spark job to gcs
-        run: gcloud storage cp spark_job.py gs://credit-card-data-analysis-gds/spark_job/
+        run: gcloud storage cp spark_job.py gs://creditcard-batch-analytics-gcs/spark_job/
 
       - name: upload airflow dag to composer
         run: |
