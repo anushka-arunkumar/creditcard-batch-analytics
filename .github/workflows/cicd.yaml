@@ -52,7 +52,7 @@ jobs:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       - name: upload spark job to gcs
-        run: gcloud storage cp spark_job.py gs://creditcard-batch-analytics-gcs/spark_job/
+        run: gcloud storage cp spark_job.py gs://creditcard-batch-analytics-gcs/spark_jobs/
 
       - name: upload airflow dag to composer
         run: |
