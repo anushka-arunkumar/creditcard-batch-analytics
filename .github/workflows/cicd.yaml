@@ -49,7 +49,7 @@ jobs:
       - name: setup google cloud sdk
         uses: google-github-actions/setup-gcloud@v1
         with:
-          project_id: ${{secrets.GCP_PROJECT_ID}}
+          project_id: 'project-5b09c9f0-c89b-4689-9bb'
 
       - name: upload spark job to gcs
         run: gcloud storage cp spark_job.py gs://credit-card-data-analysis-gds/spark_job/
