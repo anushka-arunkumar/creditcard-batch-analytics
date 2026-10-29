@@ -1,8 +1,11 @@
-import sys
 import logging
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import col, concat, to_timestamp, when, lit, round
-
+from config import (
+    BQ_CARDHOLDERS_TABLE_ID,
+    BQ_TRANSACTIONS_TABLE_ID, 
+    GCS_BUCKET
+)
 
 # logging config
 logging.basicConfig(
@@ -12,7 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def process_transactions(cardholders_df: DataFrame, transactions_df: DataFrame) -> DataFrame:
+def process_transactions(cardholders_df, transactions_df) -> DataFrame:
 
     # validate transactions
     enriched_df = transactions_df.filter(
@@ -77,76 +80,66 @@ def process_transactions(cardholders_df: DataFrame, transactions_df: DataFrame) 
 
     return enriched_df
 
-if __name__ == "__main__":
 
-    GCS_TRNX_FILE_PATH = (
-        "gs://creditcard-batch-analytics-gcs/"
-        "transactions/transactions_*.json"
+def create_sparksession():
+
+    """
+    creates a SparkSession object named spark
+    this variable performs Spark operations, such as creating DataFrames and reading files
+    """
+
+    spark = (
+        SparkSession
+        .builder
+        .appName("creditcard-batch-analytics")
+        .getOrCreate()
     )
-    GCP_PROJECT_ID = "project-5b09c9f0-c89b-4689-9bb"
-    BQ_DATASET = "creditcard_batch_analytics_bq"
-    BQ_CARDHOLDERS_TABLE = f"{GCP_PROJECT_ID}.{BQ_DATASET}.cardholders"
-    BQ_TRANSACTIONS_TABLE = f"{GCP_PROJECT_ID}.{BQ_DATASET}.transactions"
 
-    spark = None
+    logger.info("spark session created successfully")
 
-    try:
+    return spark
 
-        logger.info("starting spark job")
-        
-        # creates a SparkSession object named spark
-        # this variable performs Spark operations, such as creating DataFrames and reading files
-        spark = SparkSession.builder.appName("creditcard-batch-analytics").getOrCreate()
-        logger.info("SparkSession created successfully")
 
-        json_file_path = sys.argv[1] if len(sys.argv) > 1 else GCS_TRNX_FILE_PATH
-        logger.info("Transaction input path: %s", json_file_path)
+def read_cardholders_from_bq(spark) -> DataFrame:
 
-        # format("bigquery") tells Spark that the data source is BigQuery
-        # .load() tells Spark to execute the read operation and load the table's data into a df
-        logger.info("reading cardholders table from BigQuery....")
-        cardholders_df = (
-            spark.read.format("bigquery")
-            .option("table", BQ_CARDHOLDERS_TABLE)
-            .load()
-        )
-        logger.info("successfully created cardholders_df")
-        # cardholders_df.show(5, truncate = False)
+    logger.info("reading cardholders table from BigQuery....")
+    
+    cardholders_df = (
+        spark.read.format("bigquery")
+        .option("table", BQ_CARDHOLDERS_TABLE_ID)
+        .load()
+    )
 
-        logger.info("reading transactions from GCS....")
-        transactions_df = (
-            spark.read.format("json")
-            .option("multiline", True)
-            .load(json_file_path)
-        )
-        logger.info("successfully created transactions_df")
-        # transactions_df.show(5, truncate = False)
+    logger.info("successfully created cardholders_df")
+    cardholders_df.show(5, truncate = False)
 
-        logger.info("processing transactions....")
-        enriched_df = process_transactions(cardholders_df, transactions_df)
-        logger.info("transaction processing completed")
+    return cardholders_df
 
-        logger.info("writing results to BigQuery....")
-        (
-            enriched_df.write.format("bigquery")
-                .option("table", BQ_TRANSACTIONS_TABLE)
-                .option("temporaryGcsBucket", "creditcard-batch-analytics-gcs")
-                .mode("append")
-                .save()
-        )
-        logger.info("successfully wrote the results to BigQuery")
 
-        logger.info("processing completed")
+def read_transactions_from_gcs(spark, json_file_path) -> DataFrame:
 
-    except Exception:
+    logger.info("reading transactions from GCS....")
 
-        logger.exception("spark job failed")
+    transactions_df = (
+        spark.read.format("json")
+        .option("multiline", True)
+        .load(json_file_path)
+    )
+            
+    logger.info("successfully created transactions_df")
+    transactions_df.show(5, truncate = False)
 
-        # make the Dataproc job fail, instead of appearing successful
-        raise
+    return transactions_df
 
-    finally: 
 
-        if spark:
-            logger.info("stopping SparkSession")
-            spark.stop()
+def load_bq_transactions_table(enriched_df):
+
+    logger.info("writing results to BigQuery....")
+    (
+        enriched_df.write.format("bigquery")
+        .option("table", BQ_TRANSACTIONS_TABLE_ID)
+        .option("temporaryGcsBucket", GCS_BUCKET)
+        .mode("append")
+        .save()
+    )
+    logger.info("successfully wrote the results to BigQuery")

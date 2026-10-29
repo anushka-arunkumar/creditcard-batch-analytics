@@ -39,7 +39,13 @@ with DAG(
 
     batch_details = {
         "pyspark_batch": {
-            "main_python_file_uri": "gs://creditcard-batch-analytics-gcs/spark_jobs/spark_job.py"
+            "main_python_file_uri": (
+                "gs://creditcard-batch-analytics-gcs/spark_jobs/main.py"
+            ),
+            "python_file_uris": [
+                "gs://creditcard-batch-analytics-gcs/spark_jobs/spark_job.py",
+                "gs://creditcard-batch-analytics-gcs/spark_jobs/config.py"
+            ]
         },
         "runtime_config": {
             "version": "3.0"
