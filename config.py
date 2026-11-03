@@ -1,10 +1,16 @@
 GCP_PROJECT_ID = "project-5b09c9f0-c89b-4689-9bb"
 
 GCS_BUCKET = "creditcard-batch-analytics-gcs"
-GCS_TRXN_FILE_PATH = (
-    "gs://creditcard-batch-analytics-gcs/"
-    "transactions/transactions_*.json"
-)
+
+GCS_TRANSACTIONS_FOLDER = "transactions/"
+GCS_ARCHIVED_FOLDER = "archived/"
+GCS_FAILED_FOLDER = "failed/"
+GCS_REJECTED_FOLDER = "rejected/"
+GCS_CUSTOMERS_FOLDER = "customers/"
+GCS_SPARK_JOBS_FOLDER = "spark_jobs/"
+
+# Expected incoming transaction filename: transactions_YYYY-MM-DD.json
+TRANSACTION_FILE_REGEX = r"^transactions_(\d{8})\.json$"
 
 BQ_DATASET = "creditcard_batch_analytics_bq"
 
@@ -12,3 +18,7 @@ BQ_CARDHOLDERS_TABLE = "cardholders"
 BQ_CARDHOLDERS_TABLE_ID = f"{GCP_PROJECT_ID}.{BQ_DATASET}.{BQ_CARDHOLDERS_TABLE}"
 BQ_TRANSACTIONS_TABLE = "transactions"
 BQ_TRANSACTIONS_TABLE_ID = f"{GCP_PROJECT_ID}.{BQ_DATASET}.{BQ_TRANSACTIONS_TABLE}"
+
+STARTED_STATUS = "STARTED"
+SUCCESS_STATUS = "SUCCESS"
+FAILED_STATUS = "FAILED"
