@@ -1,6 +1,7 @@
 import sys
 import logging
-from config import GCS_TRXN_FILE_PATH
+from datetime import datetime, timezone
+from config import GCS_TRXN_FILE_PATH, STARTED_STATUS, GCS_BUCKET
 from spark_job import (
     create_sparksession, 
     read_transactions_from_gcs, 
@@ -21,10 +22,10 @@ def main():
 
     try:
         logger.info("starting spark job....")
-        
+
         json_file_path = sys.argv[1] if len(sys.argv) > 1 else GCS_TRXN_FILE_PATH
         logger.info("Transaction input path: %s", json_file_path)
-    
+        
         spark = create_sparksession()
     
         transactions_df = read_transactions_from_gcs(spark, json_file_path)
@@ -32,9 +33,7 @@ def main():
         cardholders_df = read_cardholders_from_bq(spark)
     
         logger.info("processing transactions....")
-    
         enriched_df = process_transactions(cardholders_df, transactions_df)
-    
         logger.info("transaction processing completed")
     
         load_bq_transactions_table(enriched_df)

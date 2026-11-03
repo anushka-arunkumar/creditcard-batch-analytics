@@ -9,7 +9,7 @@ GCS_REJECTED_FOLDER = "rejected/"
 GCS_CUSTOMERS_FOLDER = "customers/"
 GCS_SPARK_JOBS_FOLDER = "spark_jobs/"
 
-# Expected incoming transaction filename: transactions_YYYY-MM-DD.json
+# Expected incoming transaction filename: transactions_YYYYMMDD.json
 TRANSACTION_FILE_REGEX = r"^transactions_(\d{8})\.json$"
 
 BQ_DATASET = "creditcard_batch_analytics_bq"
@@ -22,3 +22,10 @@ BQ_TRANSACTIONS_TABLE_ID = f"{GCP_PROJECT_ID}.{BQ_DATASET}.{BQ_TRANSACTIONS_TABL
 STARTED_STATUS = "STARTED"
 SUCCESS_STATUS = "SUCCESS"
 FAILED_STATUS = "FAILED"
+
+# Cloud SQL PostgreSQL configuration
+CLOUD_SQL_INSTANCE_CONNECTION_NAME = (
+    "project-5b09c9f0-c89b-4689-9bb:us-central1:creditcard-pg-instance"
+)
+CLOUD_SQL_DB_USER = "app_user"
+CLOUD_SQL_DB_NAME = "creditcard_db"

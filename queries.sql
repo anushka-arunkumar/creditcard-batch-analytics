@@ -1,31 +1,16 @@
-CREATE TABLE IF NOT EXISTS
-  `project-5b09c9f0-c89b-4689-9bb.creditcard_batch_analytics_bq.batch_audit`
+CREATE TABLE file_processing_audit
 (
-  batch_id STRING NOT NULL,
-  airflow_dag_run_id STRING,
-  dataproc_batch_id STRING,
+    file_id VARCHAR(100) NOT NULL,
+    file_name VARCHAR(255),
+    processing_status VARCHAR(50) NOT NULL,
+    start_time TIMESTAMP,
+    end_time TIMESTAMP,
+    records_read BIGINT,
+    records_processed BIGINT,
+    records_rejected BIGINT,
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP,
 
-  batch_start_time TIMESTAMP,
-  batch_end_time TIMESTAMP,
-
-  status STRING NOT NULL,
-
-  total_files_discovered INT64,
-  total_files_processed INT64,
-  total_files_failed INT64,
-
-  records_read INT64,
-  records_processed INT64,
-  records_rejected INT64,
-  suspicious_records INT64,
-
-  error_message STRING,
-
-  created_at TIMESTAMP NOT NULL,
-  updated_at TIMESTAMP NOT NULL
-)
-PARTITION BY DATE(created_at)
-CLUSTER BY status;
-
-
-
+    PRIMARY KEY (file_id)
+);
