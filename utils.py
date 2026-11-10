@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def list_transaction_files():
+def list_transaction_files() -> list[str]:
 
     storage_client = storage.Client()
     bucket = storage_client.bucket(GCS_BUCKET)
@@ -59,7 +59,7 @@ def is_valid_transaction_filename(gcs_file_path):
         return False
 
     try:
-        datetime.strptime(match.group(1), "%Y%m%d")
+        datetime.strptime(match.group(2), "%Y%m%d")
     except ValueError:
         return False
     

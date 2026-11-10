@@ -4,3 +4,4 @@ test_db_insert.py
 test_db_update.py
 test_utils.py
 test_file_processing_audit.py
+test_dataproc_cloud_sql_connectivity.py

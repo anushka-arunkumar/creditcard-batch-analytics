@@ -111,7 +111,7 @@ def read_cardholders_from_bq(spark) -> DataFrame:
     )
 
     logger.info("successfully created cardholders_df")
-    cardholders_df.show(5, truncate = False)
+    # cardholders_df.show(5, truncate = False)
 
     return cardholders_df
 
@@ -127,7 +127,7 @@ def read_transactions_from_gcs(spark, json_file_path) -> DataFrame:
     )
             
     logger.info("successfully created transactions_df")
-    transactions_df.show(5, truncate = False)
+    # transactions_df.show(5, truncate = False)
 
     return transactions_df
 

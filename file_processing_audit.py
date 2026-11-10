@@ -1,7 +1,7 @@
-import os
 import logging
 from datetime import datetime, timezone
 from contextlib import contextmanager
+from google.cloud import secretmanager
 from google.cloud.sql.connector import Connector, IPTypes
 from config import (
     CLOUD_SQL_INSTANCE_CONNECTION_NAME,
@@ -9,7 +9,9 @@ from config import (
     CLOUD_SQL_DB_NAME,
     STARTED_STATUS,
     SUCCESS_STATUS,
-    FAILED_STATUS
+    FAILED_STATUS,
+    GCP_PROJECT_NUMBER,
+    SECRET_ID
 )
 
 logging.basicConfig(
@@ -19,13 +21,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def get_db_password():
+
+    client = secretmanager.SecretManagerServiceClient()
+
+    secret_version_name = (
+        f"projects/{GCP_PROJECT_NUMBER}/secrets/{SECRET_ID}/versions/latest"
+    )
+    response = client.access_secret_version(
+        request = {"name": secret_version_name}
+    )
+    return response.payload.data.decode("UTF-8")
+
+
 @contextmanager
 def get_db_connection():
 
-    db_password = os.environ.get("DB_PASSWORD")
-
-    if not db_password:
-        raise ValueError("DB_PASSWORD environment variable is not set")
+    db_password = get_db_password()
 
     with Connector() as connector:
 
@@ -35,7 +47,7 @@ def get_db_connection():
             user = CLOUD_SQL_DB_USER,
             password = db_password,
             db = CLOUD_SQL_DB_NAME,
-            ip_type = IPTypes.PUBLIC
+            ip_type = IPTypes.PRIVATE
         )    
 
         try:
@@ -68,7 +80,6 @@ def insert_file_audit(file_id, file_name):
         try:
 
             cursor = connection.cursor()
-
             cursor.execute(
                 insert_query,
                 (
