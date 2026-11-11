@@ -32,12 +32,6 @@ logger = logging.getLogger(__name__)
 
 def process_single_file(spark, cardholders_df, json_file_path):
 
-    file_name = json_file_path.rsplit("/", 1)[-1]
-
-    # Extract file_id from the filename
-    match = re.fullmatch(TRANSACTION_FILE_REGEX, file_name)
-    file_id = match.group(1)
-
     audit_started = False
     bq_load_completed = False
     audit_success = False
@@ -47,6 +41,13 @@ def process_single_file(spark, cardholders_df, json_file_path):
     records_rejected = None
 
     try:
+
+        file_name = json_file_path.rsplit("/", 1)[-1]
+        
+        # Extract file_id from the filename
+        match = re.fullmatch(TRANSACTION_FILE_REGEX, file_name)
+        file_id = match.group(1)
+        logger.info("file_id: %s", file_id)
 
         logger.info("starting processing for file: %s", file_name)
 
@@ -108,6 +109,10 @@ def process_single_file(spark, cardholders_df, json_file_path):
 
         logger.exception("processing failed for file: %s", file_name)
 
+        # Don't move the file to failed/ if STARTED audit insertion fails
+        if not audit_started:
+            return
+
         # Mark audit record FAILED only if BigQuery loading has not completed
         if audit_started and not bq_load_completed:
 
@@ -116,6 +121,11 @@ def process_single_file(spark, cardholders_df, json_file_path):
             except Exception:
                 logger.exception("could not update FAILED audit for file_id: %s", file_id)
 
+            try:
+                move_failed_transaction_file(json_file_path)
+            except Exception:
+                logger.exception("Could not move file to failed folder: %s", file_name)
+
         elif bq_load_completed and not audit_success:
 
             logger.error(
@@ -123,14 +133,6 @@ def process_single_file(spark, cardholders_df, json_file_path):
                 "for file_id: %s. Manual reconciliation may be required.",
                 file_id
             )
-
-        # Move to failed folder only if BigQuery loading did not complete
-        if not bq_load_completed:
-
-            try:
-                move_failed_transaction_file(json_file_path)
-            except Exception:
-                logger.exception("Could not move file to failed folder: %s", file_name)
 
         return
      
