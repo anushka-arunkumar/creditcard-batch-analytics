@@ -1,4 +1,6 @@
 import re
+import json
+import argparse
 import logging
 from config import (
     TRANSACTION_FILE_REGEX
@@ -28,6 +30,40 @@ logging.basicConfig(
     format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def parse_arguments():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--source-files",
+        required = True
+    )
+    args = parser.parse_args()
+
+    source_files_json = args.source_files.strip()
+
+    if(
+        source_files_json.startswith("(")
+        and source_files_json.endswith(")")
+    ):
+        source_files_json = source_files_json[1:-1].strip()
+
+    try:
+        source_files = json.loads(source_files_json)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"invalid json received for --source-files: {e}")
+
+    if not isinstance(source_files, list):
+        raise ValueError("--source-files must contain a json list")
+
+    if not all(
+        isinstance(file_path, str) and file_path.strip()
+        for file_path in source_files
+    ):
+        raise ValueError("--source_files contains an invalid file uri")
+
+    return source_files
 
 
 def process_single_file(spark, cardholders_df, json_file_path):
@@ -145,7 +181,7 @@ def process_single_file(spark, cardholders_df, json_file_path):
             logger.exception("Processing succeeded, but archiving failed for file: %s", file_name)
 
 
-def main():
+def main(transaction_files):
 
     spark = None
 
@@ -153,14 +189,7 @@ def main():
 
         logger.info("starting credit card batch processing")
 
-        # Step 1: List files in incoming GCS folder
-        transaction_files = list_transaction_files()
-
-        if not transaction_files:
-            logger.info("no transaction files found")
-            return
-
-        # Step 2: Validate filenames
+        # Step 1: Validate filenames
         valid_files = []
 
         for json_file_path in transaction_files:
@@ -180,13 +209,13 @@ def main():
             logger.info("no valid transaction files available for processing")
             return
 
-        # Step 3: Create one SparkSession
+        # Step 2: Create one SparkSession
         spark = create_sparksession()
 
-        # Step 4: Read cardholders from BigQuery once
+        # Step 3: Read cardholders from BigQuery once
         cardholders_df = read_cardholders_from_bq(spark)
 
-        # Step 5: Process valid files one at a time
+        # Step 4: Process valid files one at a time
         for json_file_path in valid_files:
 
             process_single_file(spark, cardholders_df, json_file_path)
@@ -208,4 +237,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+
+    transaction_files = parse_arguments()
+    main(transaction_files)
