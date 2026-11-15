@@ -69,9 +69,11 @@ def insert_file_audit(file_id, file_name):
             start_time  
         )
         VALUES (%s, %s, %s, %s)
+        RETURNING audit_id
     """
 
     start_time = datetime.now(timezone.utc)
+    audit_id = None
 
     with get_db_connection() as connection:
 
@@ -89,8 +91,16 @@ def insert_file_audit(file_id, file_name):
                     start_time
                 )
             )
+
+            # fetch the returned audit_id
+            tup = cursor.fetchone()
+            if tup:
+                audit_id = tup[0]
+
             connection.commit()
             logger.info("audit record inserted for file_id: %s", file_id)
+
+            return audit_id
 
         except Exception:
 
@@ -105,6 +115,7 @@ def insert_file_audit(file_id, file_name):
           
 
 def update_file_audit_success(
+    audit_id,
     file_id,
     records_read,
     records_processed,
@@ -119,7 +130,8 @@ def update_file_audit_success(
             records_processed = %s,
             records_rejected = %s,
             error_message = %s
-        WHERE file_id = %s
+        WHERE 
+            audit_id = %s
     """
     end_time = datetime.now(timezone.utc)    
 
@@ -139,7 +151,7 @@ def update_file_audit_success(
                     records_processed,
                     records_rejected,
                     None,
-                    file_id
+                    audit_id
                 )
             )
             if cursor.rowcount != 1:
@@ -164,6 +176,7 @@ def update_file_audit_success(
 
 
 def update_file_audit_failed(
+    audit_id,
     file_id, 
     error_message,
     records_read = None,
@@ -179,7 +192,8 @@ def update_file_audit_failed(
             records_processed = %s,
             records_rejected = %s,
             error_message = %s
-        WHERE file_id = %s
+        WHERE 
+            audit_id = %s
     """ 
 
     end_time = datetime.now(timezone.utc)
@@ -200,7 +214,7 @@ def update_file_audit_failed(
                     records_processed,
                     records_rejected,
                     error_message,
-                    file_id
+                    audit_id
                 )
             )
             if cursor.rowcount != 1:

@@ -35,7 +35,7 @@ FILE_NAME_PATTERN = re.compile(r"^transactions_([0-9a-fA-F]{16})_(\d{8})\.json$"
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
-    "retries": 1,
+    "retries": 0,
     "retry_delay": timedelta(minutes=5),
 }
 

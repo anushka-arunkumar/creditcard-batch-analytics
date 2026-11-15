@@ -88,7 +88,7 @@ def process_single_file(spark, cardholders_df, json_file_path):
         logger.info("starting processing for file: %s", file_name)
 
         # Step 1: Insert STARTED audit record
-        insert_file_audit(file_id, file_name)
+        audit_id = insert_file_audit(file_id, file_name)
         audit_started = True
 
         # Step 2: Read transactions from GCS
@@ -136,7 +136,7 @@ def process_single_file(spark, cardholders_df, json_file_path):
         bq_load_completed = True
 
         # Step 8: Update audit status to SUCCESS
-        update_file_audit_success(file_id, records_read, records_processed, records_rejected)
+        update_file_audit_success(audit_id, file_id, records_read, records_processed, records_rejected)
         audit_success = True
 
         logger.info("successfully processed file: %s", file_name)
@@ -153,7 +153,7 @@ def process_single_file(spark, cardholders_df, json_file_path):
         if audit_started and not bq_load_completed:
 
             try:
-                update_file_audit_failed(file_id, str(e), records_read, records_processed, records_rejected)
+                update_file_audit_failed(audit_id, file_id, str(e), records_read, records_processed, records_rejected)
             except Exception:
                 logger.exception("could not update FAILED audit for file_id: %s", file_id)
 
