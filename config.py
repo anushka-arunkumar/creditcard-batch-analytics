@@ -7,6 +7,7 @@ GCS_TRANSACTIONS_FOLDER = "transactions/"
 GCS_ARCHIVED_FOLDER = "archived/"
 GCS_FAILED_FOLDER = "failed/"
 GCS_REJECTED_FOLDER = "rejected/"
+GCS_DUPLICATES_FOLDER = "duplicates/"
 GCS_CUSTOMERS_FOLDER = "customers/"
 GCS_SPARK_JOBS_FOLDER = "spark_jobs/"
 

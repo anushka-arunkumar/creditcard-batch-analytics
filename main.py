@@ -2,32 +2,29 @@ import re
 import json
 import argparse
 import logging
-from config import (
-    TRANSACTION_FILE_REGEX
-)
+from config import TRANSACTION_FILE_REGEX
 from spark_job import (
-    create_sparksession, 
-    read_transactions_from_gcs, 
-    read_cardholders_from_bq, 
-    process_transactions, 
-    load_bq_transactions_table
+    create_sparksession,
+    read_transactions_from_gcs,
+    read_cardholders_from_bq,
+    process_transactions,
+    load_bq_transactions_table,
 )
 from utils import (
-    list_transaction_files,
     is_valid_transaction_filename,
     reject_transaction_file,
     move_failed_transaction_file,
-    archive_transaction_file
+    archive_transaction_file,
+    process_audit_precheck,
 )
 from file_processing_audit import (
     insert_file_audit,
     update_file_audit_success,
-    update_file_audit_failed
+    update_file_audit_failed,
 )
 
 logging.basicConfig(
-    level = logging.INFO,
-    format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -35,18 +32,12 @@ logger = logging.getLogger(__name__)
 def parse_arguments():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--source-files",
-        required = True
-    )
+    parser.add_argument("--source-files", required=True)
     args = parser.parse_args()
 
     source_files_json = args.source_files.strip()
 
-    if(
-        source_files_json.startswith("(")
-        and source_files_json.endswith(")")
-    ):
+    if source_files_json.startswith("(") and source_files_json.endswith(")"):
         source_files_json = source_files_json[1:-1].strip()
 
     try:
@@ -58,8 +49,7 @@ def parse_arguments():
         raise ValueError("--source-files must contain a json list")
 
     if not all(
-        isinstance(file_path, str) and file_path.strip()
-        for file_path in source_files
+        isinstance(file_path, str) and file_path.strip() for file_path in source_files
     ):
         raise ValueError("--source_files contains an invalid file uri")
 
@@ -79,7 +69,7 @@ def process_single_file(spark, cardholders_df, json_file_path):
     try:
 
         file_name = json_file_path.rsplit("/", 1)[-1]
-        
+
         # Extract file_id from the filename
         match = re.fullmatch(TRANSACTION_FILE_REGEX, file_name)
         file_id = match.group(1)
@@ -101,13 +91,7 @@ def process_single_file(spark, cardholders_df, json_file_path):
         # Step 4: Validate file_id inside transaction records
         file_ids = [
             row["file_id"]
-            for row in (
-                transactions_df
-                .select("file_id")
-                .distinct()
-                .limit(2)
-                .collect()
-            )
+            for row in (transactions_df.select("file_id").distinct().limit(2).collect())
         ]
         if len(file_ids) != 1 or file_ids[0] != file_id:
             raise ValueError(
@@ -128,7 +112,7 @@ def process_single_file(spark, cardholders_df, json_file_path):
             file_name,
             records_read,
             records_processed,
-            records_rejected
+            records_rejected,
         )
 
         # Step 7: Load processed records into BigQuery
@@ -136,7 +120,9 @@ def process_single_file(spark, cardholders_df, json_file_path):
         bq_load_completed = True
 
         # Step 8: Update audit status to SUCCESS
-        update_file_audit_success(audit_id, file_id, records_read, records_processed, records_rejected)
+        update_file_audit_success(
+            audit_id, file_id, records_read, records_processed, records_rejected
+        )
         audit_success = True
 
         logger.info("successfully processed file: %s", file_name)
@@ -153,9 +139,18 @@ def process_single_file(spark, cardholders_df, json_file_path):
         if audit_started and not bq_load_completed:
 
             try:
-                update_file_audit_failed(audit_id, file_id, str(e), records_read, records_processed, records_rejected)
+                update_file_audit_failed(
+                    audit_id,
+                    file_id,
+                    str(e),
+                    records_read,
+                    records_processed,
+                    records_rejected,
+                )
             except Exception:
-                logger.exception("could not update FAILED audit for file_id: %s", file_id)
+                logger.exception(
+                    "could not update FAILED audit for file_id: %s", file_id
+                )
 
             try:
                 move_failed_transaction_file(json_file_path)
@@ -167,18 +162,20 @@ def process_single_file(spark, cardholders_df, json_file_path):
             logger.error(
                 "BigQuery load completed, but SUCCESS audit update failed "
                 "for file_id: %s. Manual reconciliation may be required.",
-                file_id
+                file_id,
             )
 
         return
-     
+
     # Step 9: Archive only after SUCCESS audit update
     if audit_success:
 
         try:
             archive_transaction_file(json_file_path)
         except Exception:
-            logger.exception("Processing succeeded, but archiving failed for file: %s", file_name)
+            logger.exception(
+                "Processing succeeded, but archiving failed for file: %s", file_name
+            )
 
 
 def main(transaction_files):
@@ -189,13 +186,16 @@ def main(transaction_files):
 
         logger.info("starting credit card batch processing")
 
-        # Step 1: Validate filenames
+        # Step 1: Validate filenames & check processing_status
         valid_files = []
 
         for json_file_path in transaction_files:
 
             if is_valid_transaction_filename(json_file_path):
-                valid_files.append(json_file_path)
+
+                if process_audit_precheck(json_file_path):
+
+                    valid_files.append(json_file_path)
 
             else:
                 logger.warning("invalid transaction file name: %s", json_file_path)
@@ -203,7 +203,10 @@ def main(transaction_files):
                 try:
                     reject_transaction_file(json_file_path)
                 except Exception:
-                    logger.exception("Could not move invalid file to rejected folder: %s", json_file_path)
+                    logger.exception(
+                        "Could not move invalid file to rejected folder: %s",
+                        json_file_path,
+                    )
 
         if not valid_files:
             logger.info("no valid transaction files available for processing")
@@ -233,7 +236,7 @@ def main(transaction_files):
 
         if spark:
             logger.info("Stopping SparkSession")
-            spark.stop()      
+            spark.stop()
 
 
 if __name__ == "__main__":

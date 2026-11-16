@@ -136,7 +136,7 @@ def load_bq_transactions_table(enriched_df):
 
     logger.info("writing results to BigQuery....")
     (
-        enriched_df.write.format("bigquery")
+        enriched_df.write.format("bigquery")    # strict default all-or-nothing behavior
         .option("table", BQ_TRANSACTIONS_TABLE_ID)
         .option("temporaryGcsBucket", GCS_BUCKET)
         .mode("append")

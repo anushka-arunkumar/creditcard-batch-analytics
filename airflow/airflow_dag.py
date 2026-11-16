@@ -115,7 +115,7 @@ with DAG(
     dag_id="credit_card_transactions_dag",
     default_args=default_args,
     schedule_interval="40 4 * * *",  # daily execution at 8 PM UTC
-    start_date=pendulum.datetime(2026, 11, 13, tz="UTC"),
+    start_date=pendulum.datetime(2026, 11, 15, tz="UTC"),
     catchup=False,
     max_active_runs=1,
 ) as dag:
