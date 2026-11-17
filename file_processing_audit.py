@@ -244,7 +244,8 @@ def update_status_by_audit_id(audit_id, processing_status):
     update_query = """
         UPDATE file_processing_audit
         SET
-            processing_status = %s
+            processing_status = %s,
+            end_time = NOW()
         WHERE 
             audit_id = %s
     """
