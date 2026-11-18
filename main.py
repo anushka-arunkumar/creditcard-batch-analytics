@@ -16,12 +16,14 @@ from utils import (
     move_failed_transaction_file,
     archive_transaction_file,
     process_audit_precheck,
+    get_file_id,
 )
 from file_processing_audit import (
     insert_file_audit,
     update_file_audit_success,
     update_file_audit_failed,
 )
+from schema import is_schema_valid
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -195,7 +197,43 @@ def main(transaction_files):
 
                 if process_audit_precheck(json_file_path):
 
-                    valid_files.append(json_file_path)
+                    valid_schema, error_msg = is_schema_valid(json_file_path)
+
+                    if valid_schema:
+                        valid_files.append(json_file_path)
+                    else:
+                        logger.warning(
+                            "Schema validation failed for file: %s | Reason: %s",
+                            json_file_path,
+                            error_msg,
+                        )
+
+                        file_name = json_file_path.rsplit("/", 1)[-1]
+                        file_id = get_file_id(json_file_path)
+
+                        try:
+                            audit_id = insert_file_audit(file_id, file_name)
+                            update_file_audit_failed(
+                                audit_id,
+                                file_id,
+                                f"Schema Validation Error: {error_msg}",
+                                records_read=0,
+                                records_processed=0,
+                                records_rejected=0,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "could not log schema failure to audit table for file_id: %s",
+                                file_id,
+                            )
+
+                        try:
+                            reject_transaction_file(json_file_path)
+                        except Exception:
+                            logger.exception(
+                                "could not move schema invalid file to rejected folder: %s",
+                                json_file_path,
+                            )
 
             else:
                 logger.warning("invalid transaction file name: %s", json_file_path)
