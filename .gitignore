@@ -5,3 +5,4 @@ test_db_update.py
 test_utils.py
 test_file_processing_audit.py
 test_dataproc_cloud_sql_connectivity.py
+generate_test_transactions_file.py
