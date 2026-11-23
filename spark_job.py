@@ -2,6 +2,7 @@ import logging
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import (
     col,
+    count,
     concat,
     to_timestamp,
     when,
@@ -19,18 +20,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def process_transactions(cardholders_df, transactions_df) -> DataFrame:
+def process_transactions(spark, cardholders_df, transactions_df) -> DataFrame:
 
     # validate transactions
-    enriched_df = transactions_df.filter(
-        (col("transaction_amount") > 0)
-        & (col("transaction_status").isin("SUCCESS", "FAILED", "PENDING"))
-        & (col("cardholder_id").isNotNull())
-        & (col("merchant_id").isNotNull())
+    valid_transactions_df, invalid_transactions_df = apply_data_quality_rules(
+        spark, transactions_df, cardholders_df
     )
 
     enriched_df = (
-        enriched_df
+        valid_transactions_df
         # categorize transactions by amount
         .withColumn(
             "transaction_category",
@@ -71,37 +69,7 @@ def process_transactions(cardholders_df, transactions_df) -> DataFrame:
         .otherwise(lit("Low")),
     )
 
-    final_enriched_df = enriched_df.select(
-        "cardholder_id",
-        "device_type",
-        "fraud_flag",
-        "merchant_category",
-        "merchant_id",
-        "merchant_location",
-        "merchant_name",
-        "transaction_amount",
-        "transaction_currency",
-        "transaction_id",
-        "transaction_status",
-        "transaction_timestamp",
-        "transaction_category",
-        "high_risk",
-        "merchant_info",
-        "card_number",
-        "card_type",
-        "customer_name",
-        "email",
-        "phone_number",
-        "country",
-        "preferred_currency",
-        "reward_points",
-        "risk_score",
-        "updated_reward_points",
-        "fraud_risk_level",
-        "file_id",
-    )
-
-    return final_enriched_df
+    return enriched_df, invalid_transactions_df
 
 
 def create_sparksession():
@@ -145,58 +113,68 @@ def read_transactions_from_gcs(spark, json_file_path) -> DataFrame:
     return transactions_df
 
 
-def load_bq_transactions_table(enriched_df):
+def load_bq_table(dataframe, table):
 
-    logger.info("writing results to BigQuery....")
+    logger.info("writing results to bigquery table %s", table)
     (
-        enriched_df.write.format("bigquery")  # strict default all-or-nothing behavior
-        .option("table", BQ_TRANSACTIONS_TABLE_ID)
+        dataframe.write.format("bigquery")  # strict default all-or-nothing behavior
+        .option("table", table)
         .option("temporaryGcsBucket", GCS_BUCKET)
         .mode("append")
         .save()
     )
-    logger.info("successfully wrote the results to BigQuery")
+    logger.info("successfully wrote the results to bigquery table %s", table)
 
 
-def apply_data_quality_rules(spark, transactions_df, cardholder_df):
+def apply_data_quality_rules(spark, transactions_df, cardholders_df):
 
     # 1. intra-batch deduplication based on transaction_id
-    deduped_df = transactions_df.dropDuplicates(["transaction_id"])
-    duplicates_df = transactions_df.exceptAll(deduped_df).withColumn(
-        "rejection_reason", lit("INTRA_BATCH_DUPLICATE")
+    duplicate_ids_df = (
+        transactions_df.groupBy("transaction_id")
+        .agg(count("*").alias("record_count"))
+        .filter(col("record_count") > 1)
+        .select("transaction_id")
+    )
+
+    duplicates_df = transactions_df.join(
+        duplicate_ids_df, on="transaction_id", how="inner"
+    ).withColumn("rejection_reason", lit("INTRA_BATCH_DUPLICATE"))
+
+    deduped_df = transactions_df.join(
+        duplicate_ids_df, on="transaction_id", how="left_anti"
     )
 
     # 2. timestamp sanity check
     parsed_df = deduped_df.withColumn(
-        "parsed_timestamp", to_timestamp(col("transaction_timestamp"))
+        "transaction_timestamp", to_timestamp(col("transaction_timestamp"))
     )
-    valid_time_df = parsed_df.filter(
-        (col("parsed_timestamp").isNotNull())
-        & (col("parsed_timestamp") <= current_timestamp())
+    valid_time_condition = (col("transaction_timestamp").isNotNull()) & (
+        col("transaction_timestamp") <= current_timestamp()
     )
-    invalid_time_df = parsed_df.exceptAll(valid_time_df).withColumn(
+    valid_time_df = parsed_df.filter(valid_time_condition)
+    invalid_time_df = parsed_df.filter(~valid_time_condition).withColumn(
         "rejection_reason", lit("INVALID_OR_FUTURE_TIMESTAMP")
     )
 
     # 3. capture orphaned cardholders
     valid_referential = valid_time_df.join(
-        cardholder_df.select("cardholder_id", "preferred_currency", "risk_score"),
+        cardholders_df.select("cardholder_id", "preferred_currency", "risk_score"),
         on="cardholder_id",
         how="inner",
     )
     orphaned_df = valid_time_df.join(
-        cardholder_df.select("cardholder_id"), on="cardholder_id", how="left_anti"
+        cardholders_df.select("cardholder_id"), on="cardholder_id", how="left_anti"
     ).withColumn("rejection_reason", lit("ORPHANED_CARDHOLDER_ID"))
 
     # 4. currency alignment: transaction_currency matches preferred_currency
     # 5. risk vs. fraud consistency: Ensure extreme risk combinations are flagged or valid
-    business_valid_df = valid_referential.filter(
-        (col("transaction_currency") == col("preferred_currency"))
-        & (~((col("risk_score") > 0.8) & (col("fraud_flag") == False)))
-    )
-    business_invalid_df = valid_referential.exceptAll(business_valid_df).withColumn(
-        "rejection_reason", lit("BUSINESS_RULE_VIOLATION")
-    )
+    business_valid_condition = (
+        col("transaction_currency") == col("preferred_currency")
+    ) & (~((col("risk_score") > 0.8) & (col("fraud_flag") == False)))
+    business_valid_df = valid_referential.filter(business_valid_condition)
+    business_invalid_df = valid_referential.filter(
+        ~business_valid_condition
+    ).withColumn("rejection_reason", lit("BUSINESS_RULE_VIOLATION"))
 
     # 6. capture historical duplicates against BigQuery
     existing_bq_ids = (
@@ -204,9 +182,7 @@ def apply_data_quality_rules(spark, transactions_df, cardholder_df):
         .option("table", BQ_TRANSACTIONS_TABLE_ID)
         .load()
         .select("transaction_id")
-        .distinct()
     )
-
     truly_new_df = business_valid_df.join(
         existing_bq_ids, on="transaction_id", how="left_anti"
     )
@@ -216,11 +192,14 @@ def apply_data_quality_rules(spark, transactions_df, cardholder_df):
 
     # 7. combine all invalid DataFrames into a single unified quarantine DataFrame
     invalid_transactions_df = (
-        duplicates_df
-        .unionByName(invalid_time_df, allowMissingColumns=True)
+        duplicates_df.unionByName(invalid_time_df, allowMissingColumns=True)
         .unionByName(orphaned_df, allowMissingColumns=True)
         .unionByName(business_invalid_df, allowMissingColumns=True)
         .unionByName(historical_duplicates_df, allowMissingColumns=True)
     )
 
-    return truly_new_df, invalid_transactions_df
+    valid_transactions_df = transactions_df.join(
+        truly_new_df.select("transaction_id"), on="transaction_id", how="left_semi"
+    )
+
+    return valid_transactions_df, invalid_transactions_df

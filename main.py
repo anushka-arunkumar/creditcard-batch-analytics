@@ -2,13 +2,17 @@ import re
 import json
 import argparse
 import logging
-from config import TRANSACTION_FILE_REGEX
+from config import (
+    TRANSACTION_FILE_REGEX,
+    BQ_TRANSACTIONS_TABLE_ID,
+    BQ_TRANSACTION_REJECTIONS_TABLE_ID,
+)
 from spark_job import (
     create_sparksession,
     read_transactions_from_gcs,
     read_cardholders_from_bq,
     process_transactions,
-    load_bq_transactions_table,
+    load_bq_table,
 )
 from utils import (
     is_valid_transaction_filename,
@@ -103,10 +107,13 @@ def process_single_file(spark, cardholders_df, json_file_path):
 
         # Step 5: Transform transactions
         logger.info("processing transactions for file: %s", file_name)
-        enriched_df = process_transactions(cardholders_df, transactions_df)
+        enriched_df, invalid_transactions_df = process_transactions(
+            spark, cardholders_df, transactions_df
+        )
 
         # Step 6: Count processed and rejected records
         records_processed = enriched_df.count()
+        # records_rejected = invalid_transactions_df.count()
         records_rejected = records_read - records_processed
 
         logger.info(
@@ -118,7 +125,13 @@ def process_single_file(spark, cardholders_df, json_file_path):
         )
 
         # Step 7: Load processed records into BigQuery
-        load_bq_transactions_table(enriched_df)
+        load_bq_table(enriched_df, BQ_TRANSACTIONS_TABLE_ID)
+
+        if invalid_transactions_df.isEmpty():
+            logger.info("no invalid transaction records for file: %s", file_name)
+        else:
+            load_bq_table(invalid_transactions_df, BQ_TRANSACTION_REJECTIONS_TABLE_ID)
+
         bq_load_completed = True
 
         # Step 8: Update audit status to SUCCESS
